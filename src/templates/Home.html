@@ -1,10 +1,43 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Title</title>
-</head>
-<body>
+{% extends 'Base.html' %}
 
-</body>
-</html>
+{% block title %}Чат{% endblock %}
+
+{% block content %}
+    <h1>Чат</h1>
+    <button id="findPartnerButton">Найти собеседника</button>
+    <div id="loading" style="display:none;">
+        <p>Ожидание подключения собеседника...</p>
+        <div class="loader"></div>
+    </div>
+    <div id="chatContainer" style="display:none;">
+        <h2>Чат ID: <span id="chatId"></span></h2>
+    </div>
+
+    <script>
+        document.getElementById('findPartnerButton').addEventListener('click', function() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('chatContainer').style.display = 'none';
+
+            fetch('/find-partner', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    throw new Error('Ошибка при поиске собеседника');
+                }
+            })
+            .then(data => {
+                const chatId = data.chat_id;
+                document.getElementById('chatId').innerText = chatId;
+                document.getElementById('loading').style.display = 'none';
+                window.location.href = `/chat/${chatId}`;  // Перенаправляем на страницу чата
+            })
+            .catch(error => {
+                alert(error.message);
+                document.getElementById('loading').style.display = 'none';
+            });
+        });
+    </script>
+{% endblock %}

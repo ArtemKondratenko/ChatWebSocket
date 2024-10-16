@@ -1,10 +1,173 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Title</title>
-</head>
-<body>
+{% extends "Base.html" %}
 
-</body>
-</html>
+{% block title %}Чат ID: {{ chat_id }}{% endblock %}
+
+{% block content %}
+<h2 style="text-align: center;">Чат</h2>
+<div id="messages">
+    <!-- Здесь будут сообщения -->
+</div>
+<div style="display: flex; margin-top: 10px; width: 100%;">
+    <input type="text" id="messageInput" placeholder="Введите сообщение..." style="flex: 1; margin-right: 10px;" />
+    <input type="file" id="imageInput" accept="image/*" style="margin-right: 10px;" />
+    <button id="sendButton">Отправить</button>
+</div>
+
+<style>
+    .message {
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 5px;
+        max-width: 75%;
+        clear: both;
+        color: #333; /* Цвет текста */
+    }
+    .participant1 {
+        background-color: #d1e7dd; /* Цвет фона для отправителя */
+        float: right;
+    }
+    .participant2 {
+        background-color: #f8d7da; /* Цвет фона для получателя */
+        float: left;
+    }
+    .image-message {
+        max-width: 100%; /* Ограничиваем размер изображения */
+        height: auto; /* Сохраняем пропорции изображения */
+    }
+</style>
+
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+<script>
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    const chatId = "{{ chat_id }}"; // Получаем ID чата из шаблона
+    const senderId = getCookie('sender_id'); // Получаем ID участника из куки
+
+    if (!senderId) {
+        alert("Sender ID is not set. Please log in.");
+    }
+
+    const socket = io(); // Инициализация сокета
+
+    socket.on('connect', () => {
+        console.log('Connected to WebSocket server');
+        socket.emit('join', {
+            chat_id: chatId,
+            access_token: getCookie('access_token'),
+            sender_id: senderId
+        });
+    });
+
+    document.getElementById('sendButton').addEventListener('click', function() {
+        const message = document.getElementById('messageInput').value;
+        const fileInput = document.getElementById('imageInput');
+        const file = fileInput.files[0];
+
+        if (file) {
+            const formData = new FormData();
+            formData.append('image', file);
+            formData.append('sender_id', senderId);
+
+            // Отправка изображения через HTTP
+            fetch(`/send-image/${chatId}`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json(); // Получаем URL изображения
+                } else {
+                    return response.json().then(err => {
+                        alert(`Ошибка при отправке изображения: ${err.error}`);
+                    });
+                }
+            })
+            .then(data => {
+                if (data.status === 'Image sent successfully') {
+                    // Добавляем изображение в интерфейс
+                    // addMessageToChat(data.image_url, true, 'image');
+                }
+                fileInput.value = ''; // Очистка поля выбора файла
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        } else if (message) {
+            // Отправка текстового сообщения через WebSocket
+            socket.emit('send_message', {
+                chat_id: chatId,
+                content: message,
+                sender_id: senderId,
+                access_token: getCookie('access_token')
+            });
+            document.getElementById('messageInput').value = ''; // Очистка поля ввода
+        } else {
+            alert('Введите сообщение или выберите изображение для отправки.');
+        }
+    });
+
+    // Функция для добавления сообщения в чат
+    function addMessageToChat(content, isSender, type) {
+        const messagesDiv = document.getElementById('messages');
+        const msgElement = document.createElement('div');
+        msgElement.classList.add('message');
+
+        if (type === 'text') {
+            msgElement.textContent = content;
+        } else if (type === 'image') {
+            const imgElement = document.createElement('img');
+            imgElement.src = content;
+            imgElement.classList.add('image-message');
+            msgElement.appendChild(imgElement);
+        }
+
+        // Применяем класс в зависимости от отправителя
+        if (isSender) {
+            msgElement.classList.add('participant1'); // Фон для отправителя
+        } else {
+            msgElement.classList.add('participant2'); // Фон для получателя
+        }
+
+        messagesDiv.appendChild(msgElement);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight; // Прокрутка вниз
+    }
+
+    socket.on('receive_image', (data) => {
+        addMessageToChat(data.image_url, data.sender_id === senderId, 'image');
+    });
+
+    socket.on('receive_message', (data) => {
+        addMessageToChat(data.content, data.sender_id === senderId, 'text');
+    });
+
+    // Функция для загрузки сообщений
+    function loadMessages() {
+        fetch(`/messages/${chatId}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.innerHTML = ''; // Очистка текущих сообщений
+                data.messages.forEach(msg => {
+                    addMessageToChat(msg.content, msg.sender_id === senderId, msg.type);
+                });
+                messagesDiv.scrollTop = messagesDiv.scrollHeight; // Прокрутка вниз
+            })
+            .catch(error => {
+                console.error('Error loading messages:', error);
+                alert('Ошибка загрузки сообщений. Проверьте консоль для подробностей.');
+            });
+    }
+
+    // Загрузка сообщений при загрузке страницы
+    loadMessages();
+</script>
+{% endblock %}
